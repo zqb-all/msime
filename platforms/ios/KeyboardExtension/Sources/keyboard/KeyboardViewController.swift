@@ -919,14 +919,17 @@ final class KeyboardViewController: UIInputViewController, UIGestureRecognizerDe
                                   punctuationLock: session.sharedPreferences?["punctuation_lock"] as? String)
   }
 
-  /// 根视图是普通视图，不是 `UIInputView`：后者释放不掉，会把整套键盘和它的布局引擎留在进程里，见 `KeyboardInputView`（#10944）。
+  /// 系统通过 `inputView` 承载键盘；普通视图承载整套约束，避免 `UIInputView` 的布局引擎随系统输入视图泄漏。
   override func loadView() {
-    view = KeyboardInputView()
+    let contentView = KeyboardInputView()
+    inputView = KeyboardInputContainerView(contentView: contentView)
+    view = contentView
   }
 
-  /// UIKit 总在主线程上释放视图控制器，所以这里可以按主线程执行。根视图和整棵键盘视图随控制器一起释放，不用在这里摘。
+  /// UIKit 总在主线程上释放视图控制器，所以这里可以按主线程执行。系统保留下来的输入视图先摘掉普通视图，避免整套键盘跟着空壳存活。
   deinit {
     MainActor.assumeIsolated {
+      (inputView as? KeyboardInputContainerView)?.detachContentView()
       // 会话随桥一起销毁；释放时还持着会话，说明它跳过了 `viewWillDisappear`，在那之前锁一直在手上（#10634）。
       if sessionPrepared, session.holdsSession { DiagnosticLog.shared.write("controller_released session_held=1") }
     }
